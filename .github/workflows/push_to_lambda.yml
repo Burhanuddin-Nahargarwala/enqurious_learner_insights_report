@@ -28,11 +28,11 @@ jobs:
           cd ..
           zip -g lib.zip *.py
 
-      - name: Deploy to AWS Lambda
-        uses: appleboy/lambda-action@master
+      - name: Upload S3    
+        uses: shallwefootball/s3-upload-action@master
+        id: S3
         with:
           aws_access_key_id: ${{ secrets.ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.SECRET_ACCESS_KEY }}
-          aws_region: ${{ secrets.REGION }}
-          function_name: learner_progress_report_generation
-          zip_file: lib.zip
+          aws_bucket: learners-progress-report-credentials
+          source_dir: lib.zip
