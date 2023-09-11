@@ -195,131 +195,132 @@ def is_program_code(program_code):
     return False
 
 
-# Fetch the folder_id of progress_report
-# This will search for folder, if folder is not there it will create the folder and return the id
-# else will directly return the id
-progress_report_folder_id = get_folder_id("Progress Report")
+def lambda_handler(event, context):
+    # Fetch the folder_id of progress_report
+    # This will search for folder, if folder is not there it will create the folder and return the id
+    # else will directly return the id
+    progress_report_folder_id = get_folder_id("Progress Report")
 
-cursor.execute("SELECT * FROM clients;")
-result = cursor.fetchall()
-column_names = [desc[0] for desc in cursor.description]
+    cursor.execute("SELECT * FROM clients;")
+    result = cursor.fetchall()
+    column_names = [desc[0] for desc in cursor.description]
 
-client_df = pd.DataFrame(result, columns=column_names)
+    client_df = pd.DataFrame(result, columns=column_names)
 
-client_ids = list(client_df["client_id"].unique())
-client_names = list(client_df["client_name"].unique())
+    client_ids = list(client_df["client_id"].unique())
+    client_names = list(client_df["client_name"].unique())
 
-map_client_id_and_name = dict(zip(client_ids, client_names))
+    map_client_id_and_name = dict(zip(client_ids, client_names))
 
-# now fetch the orders_dimension details
-cursor.execute("SELECT * FROM orders_dimension;")
+    # now fetch the orders_dimension details
+    cursor.execute("SELECT * FROM orders_dimension;")
 
-result = cursor.fetchall()
-columns = [desc[0] for desc in cursor.description]
+    result = cursor.fetchall()
+    columns = [desc[0] for desc in cursor.description]
 
-orders_df = pd.DataFrame(result, columns=columns)
+    orders_df = pd.DataFrame(result, columns=columns)
 
-# Now iterate through each client to create separate folder for that client
-for client_id, client_name in tqdm(map_client_id_and_name.items()):
-    print(client_name)
+    # Now iterate through each client to create separate folder for that client
+    for client_id, client_name in tqdm(map_client_id_and_name.items()):
+        print(client_name)
 
-    # Fetch the skills_fact calculation df
-    skills_fact_calculation_df = skills_fact_calculation(
-        cursor=cursor, client_id=client_id  # Tredence
-    )
+        # Fetch the skills_fact calculation df
+        skills_fact_calculation_df = skills_fact_calculation(
+            cursor=cursor, client_id=client_id  # Tredence
+        )
 
-    # Now fetch the progress fact
-    progress_fact_calculation_df = progress_fact_calculation(
-        cursor=cursor, client_id=client_id
-    )
+        # Now fetch the progress fact
+        progress_fact_calculation_df = progress_fact_calculation(
+            cursor=cursor, client_id=client_id
+        )
 
-    # Merge both skills_fact_calculation and progress_fact_calculation
-    skills_fact_and_progress_fact = pd.merge(
-        skills_fact_calculation_df,
-        progress_fact_calculation_df.rename(
-            {
-                "participants_name": "participant_name",
-                "participants_email": "participant_email",
-            },
-            axis=1,
-        ),
-        on=["participant_name", "participant_email", "order_id", "project_name"],
-        how="right",
-    )
+        # Merge both skills_fact_calculation and progress_fact_calculation
+        skills_fact_and_progress_fact = pd.merge(
+            skills_fact_calculation_df,
+            progress_fact_calculation_df.rename(
+                {
+                    "participants_name": "participant_name",
+                    "participants_email": "participant_email",
+                },
+                axis=1,
+            ),
+            on=["participant_name", "participant_email", "order_id", "project_name"],
+            how="right",
+        )
 
-    # merge the calculation of skills and progress fact with orders_dimension
-    skills_fact_and_progress_fact_orders = pd.merge(
-        skills_fact_and_progress_fact,
-        orders_df.rename({"id": "order_id"}, axis=1),
-        on="order_id",
-        how="inner",
-    )
+        # merge the calculation of skills and progress fact with orders_dimension
+        skills_fact_and_progress_fact_orders = pd.merge(
+            skills_fact_and_progress_fact,
+            orders_df.rename({"id": "order_id"}, axis=1),
+            on="order_id",
+            how="inner",
+        )
 
-    unique_description = list(
-        skills_fact_and_progress_fact_orders["description"].unique()
-    )
+        unique_description = list(
+            skills_fact_and_progress_fact_orders["description"].unique()
+        )
 
-    # program_codes = (
-    #     skills_fact_and_progress_fact_orders["description"]
-    #     .apply(lambda desc: desc.split("_")[0])
-    #     .unique()
-    # )
+        # program_codes = (
+        #     skills_fact_and_progress_fact_orders["description"]
+        #     .apply(lambda desc: desc.split("_")[0])
+        #     .unique()
+        # )
 
-    # Filter out only those program codes that contains _
-    program_codes = set(
-        [desc.split("_")[0] for desc in unique_description if "_" in desc]
-    )
+        # Filter out only those program codes that contains _
+        program_codes = set(
+            [desc.split("_")[0] for desc in unique_description if "_" in desc]
+        )
 
-    if not program_codes:
-        continue
-
-    # Create the client_name directory such as Fractal, Tredence, etc or if it is
-    # created then fetch the id of that.
-    client_folder_id = get_folder_id(
-        folder_name=client_name, parent_id=progress_report_folder_id
-    )
-
-    for program_code in program_codes:
-        # if program code doesn't contain the digits and letters both, don't consider that program code
-        if not is_program_code(program_code):
+        if not program_codes:
             continue
-        
-        # Once the client folder is created, now create the program_code folder or get id of that
-        program_code_folder_id = get_folder_id(
-            folder_name=program_code, parent_id=client_folder_id
+
+        # Create the client_name directory such as Fractal, Tredence, etc or if it is
+        # created then fetch the id of that.
+        client_folder_id = get_folder_id(
+            folder_name=client_name, parent_id=progress_report_folder_id
         )
 
-        # now filter out the data for this program code
-        view_df = skills_fact_and_progress_fact_orders[
-            skills_fact_and_progress_fact_orders["description"].str.contains(
-                program_code
+        for program_code in program_codes:
+            # if program code doesn't contain the digits and letters both, don't consider that program code
+            if not is_program_code(program_code):
+                continue
+            
+            # Once the client folder is created, now create the program_code folder or get id of that
+            program_code_folder_id = get_folder_id(
+                folder_name=program_code, parent_id=client_folder_id
             )
-        ].reset_index(drop=True)
 
-        print(view_df)
+            # now filter out the data for this program code
+            view_df = skills_fact_and_progress_fact_orders[
+                skills_fact_and_progress_fact_orders["description"].str.contains(
+                    program_code
+                )
+            ].reset_index(drop=True)
 
-        view_df = view_df[
-            [
-                "participant_name",
-                "participant_email",
-                "created_at",
-                "order_id",
-                "Scores (%)",
-                "Progress (%)",
-                "project_name",
-                "intent",
+            print(view_df)
+
+            view_df = view_df[
+                [
+                    "participant_name",
+                    "participant_email",
+                    "created_at",
+                    "order_id",
+                    "Scores (%)",
+                    "Progress (%)",
+                    "project_name",
+                    "intent",
+                ]
             ]
-        ]
 
-        # The file_name should be pogram_code+"_"+report ex. GLOB-0567_report
-        file_name=f"{program_code}_report"
+            # The file_name should be pogram_code+"_"+report ex. GLOB-0567_report
+            file_name=f"{program_code}_report"
 
-        # it will take program code and based on that, it will filter the
-        generate_report_based_on_program_code(
-            fact_df=view_df,
-            folder_id=program_code_folder_id,  # the folder where the reports sheet will be created that is Program code folder
-            file_name=file_name
-        )
+            # it will take program code and based on that, it will filter the
+            generate_report_based_on_program_code(
+                fact_df=view_df,
+                folder_id=program_code_folder_id,  # the folder where the reports sheet will be created that is Program code folder
+                file_name=file_name
+            )
 
-# At the end close the cursor and conn
-close_cursor_and_conn()
+    # At the end close the cursor and conn
+    close_cursor_and_conn()
