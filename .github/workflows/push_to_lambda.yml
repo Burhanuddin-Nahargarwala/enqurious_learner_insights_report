@@ -32,7 +32,7 @@ jobs:
         uses: shallwefootball/s3-upload-action@master
         id: S3
         with:
-          aws_access_key_id: ${{ secrets.ACCESS_KEY_ID }}
+          aws_key_id: ${{ secrets.ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.SECRET_ACCESS_KEY }}
           aws_bucket: learners-progress-report-credentials
           source_dir: lib.zip
