@@ -195,7 +195,7 @@ def is_program_code(program_code):
     return False
 
 
-def lambda_handler(event, context):
+def main():
     # Fetch the folder_id of progress_report
     # This will search for folder, if folder is not there it will create the folder and return the id
     # else will directly return the id
@@ -324,3 +324,12 @@ def lambda_handler(event, context):
 
     # At the end close the cursor and conn
     close_cursor_and_conn()
+
+
+def lambda_handler(event, context):
+    # Run the main function
+    main()
+    return {"message": "Report successfully generated"}
+
+if __name__ == "__main__":
+    main()
