@@ -9,7 +9,6 @@ import os
 import gspread
 import boto3
 from googleapiclient.discovery import build
-from google.oauth2 import service_account
 from common import is_running_locally
 import json
 
