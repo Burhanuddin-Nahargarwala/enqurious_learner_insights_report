@@ -1,0 +1,38 @@
+name: Progress Report Code Deployment to AWS Lambda
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -t lib
+
+      - name: Create deployment package
+        run: |
+          cd lib
+          zip -r9 ../lib.zip .
+          cd ..
+          zip -g lib.zip *.py
+
+      - name: Deploy to AWS Lambda
+        uses: appleboy/lambda-action@master
+        with:
+          aws_access_key_id: ${{ secrets.ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.SECRET_ACCESS_KEY }}
+          aws_region: ${{ secrets.REGION }}
+          function_name: Enqurious_ETL_pipeline
+          zip_file: lib.zip
