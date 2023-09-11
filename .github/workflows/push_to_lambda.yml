@@ -34,5 +34,5 @@ jobs:
           aws_access_key_id: ${{ secrets.ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.SECRET_ACCESS_KEY }}
           aws_region: ${{ secrets.REGION }}
-          function_name: Enqurious_ETL_pipeline
+          function_name: learner_progress_report_generation
           zip_file: lib.zip
