@@ -27,6 +27,11 @@ jobs:
           zip -r9 ../lib.zip .
           cd ..
           zip -g lib.zip *.py
+      
+      - name: Move lib.zip to directory
+        run: |
+          mkdir upload_dir
+          mv lib.zip upload_dir/
 
       - name: Upload to S3
         uses: shallwefootball/s3-upload-action@master
@@ -35,4 +40,4 @@ jobs:
           aws_key_id: ${{ secrets.ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.SECRET_ACCESS_KEY }} # Replace with your AWS region
           aws_bucket: learners-progress-report-credentials
-          source_dir: ./lib.zip  # You can specify a different source directory if needed
+          source_dir: upload_dir  # You can specify a different source directory if needed
