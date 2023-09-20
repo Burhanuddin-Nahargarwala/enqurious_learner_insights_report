@@ -22,8 +22,6 @@ if is_running_locally():
     aws_access_key = os.environ.get('aws-access-key-id')
     aws_secret_key = os.environ.get('aws-secret-access-key')
     region = os.environ.get('aws-region')
-    bucket_name = "learners-progress-report-credentials"
-    file_key = "google_credentials_file/generated-report-77c0d34eb762.json"
 
     s3 = boto3.client(
         's3',
@@ -33,6 +31,8 @@ if is_running_locally():
 else:   
     s3=boto3.client('s3')
 
+bucket_name = "learners-progress-report-credentials"
+file_key = "google_credentials_file/generated-report-77c0d34eb762.json"
 
 # Fetch the contents of the file from S3
 try:
