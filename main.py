@@ -6,7 +6,6 @@ from gspread_functions import search_folder, create_folder, generate_report
 from db import conn, cursor, close_cursor_and_conn
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
-from tqdm import tqdm
 from common import PROGRESS_REPORT_FOLDER_NAME
 
 def filter_within_proxy_period(df, months):
@@ -223,7 +222,7 @@ def main():
     orders_df = pd.DataFrame(result, columns=columns)
 
     # Now iterate through each client to create separate folder for that client
-    for client_id, client_name in tqdm(map_client_id_and_name.items()):
+    for client_id, client_name in map_client_id_and_name.items():
         print(client_name)
 
         # Fetch the skills_fact calculation df
