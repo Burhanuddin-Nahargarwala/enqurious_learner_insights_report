@@ -35,4 +35,4 @@ jobs:
           aws_key_id: ${{ secrets.ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.SECRET_ACCESS_KEY }} # Replace with your AWS region
           aws_bucket: learners-progress-report-credentials
-          source_dir: .  # You can specify a different source directory if needed
+          source_dir: ./lib.zip  # You can specify a different source directory if needed
