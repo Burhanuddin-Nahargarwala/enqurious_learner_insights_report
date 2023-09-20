@@ -11,6 +11,7 @@ import boto3
 from googleapiclient.discovery import build
 from common import is_running_locally
 import json
+import pandas as pd
 
 
 # if the code is running locally then only the dotenv module will be imported
@@ -79,7 +80,7 @@ def search_folder(folder_name, parent_folder_id=None):
     return folders
 
 
-def create_folder(folder_name, parent_folder_id="1AzkjLoxMHu6oA7CQHSNeNBQTUKadF3_D"):
+def create_folder(folder_name, parent_folder_id): # parent_folder_id="1AzkjLoxMHu6oA7CQHSNeNBQTUKadF3_D"):
     # Create the folder metadata
     folder_metadata = {
         "name": folder_name,
@@ -153,6 +154,13 @@ def bold_text(sheet, cell_range, enable_bold: bool = True):
     sheet.format(cell_range, format)
 
 
+# def sort_data(sheet):
+#     total_cols = sheet.col_count
+    
+#     for col in range(3, total_cols+1):
+#         sheet.sort((col, 'des'))
+
+
 def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name):
     """
     prerequisites: If the function doesn't store the given df into the Google sheet then check that you
@@ -191,62 +199,44 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
     gauth = GoogleAuth()
     drive = GoogleDrive(gauth)
 
-    # open a google sheet
-    # gs = gc.open_by_url(GSHEET_URL)  # select a work sheet from its name
-
-    # Now add a gsheet
-    # Now fetch the current time
-    current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # check whether the sheet exists in the google sheet or not
+    # check whether the sheet exists in the google spreadsheet or not
     try:
-        # Now open the given sheet
+        # If yes, then open the given sheet
         sheet = sh.worksheet(sheet_name)
-
-        set_with_dataframe(
-            worksheet=sheet,
-            dataframe=view_df,
-            include_index=False,
-            include_column_header=True,
-            resize=True,
-        )
-
-        # First remove the boldness from the cell range
-        # will remove the bold from the cell as below logic inserts 2 cell, and thus if the bold formatting
-        # is not removed then the bold formatting of A1:B1 will move to A3:B3, and like these it will shift
-        # in each iteration. It is necessary to remove the boldness before inserting the rows.
-        bold_text(sheet=sheet, cell_range="A1:B1", enable_bold=False)
-
-        # Also, remove the bol formatting from the 3 row
-        bold_text(sheet=sheet, cell_range="3:3", enable_bold=False)
-
-        # Insert an empty row at the top (row 1)
-        sheet.insert_row(values=None, index=1)
-        sheet.insert_row(values=None, index=1)
-
-        # Update cell A1 with "Refresh" and cell B1 with the current timestamp
-        sheet.update("A1", "Refresh_at: ")
-        sheet.update("B1", current_timestamp)
     except gspread.exceptions.WorksheetNotFound as err:
+        # Else add the sheet and then open it
         sheet = sh.add_worksheet(
             title=sheet_name, rows=len(view_df), cols=len(view_df.columns)
-        )
+        )  
 
-        set_with_dataframe(
+    set_with_dataframe(
             worksheet=sheet,
             dataframe=view_df,
             include_index=False,
             include_column_header=True,
             resize=True,
         )
+    
+    # First remove the boldness from the cell range
+    # will remove the bold from the cell as below logic inserts 2 cell, and thus if the bold formatting
+    # is not removed then the bold formatting of A1:B1 will move to A3:B3, and like these it will shift
+    # in each iteration. It is necessary to remove the boldness before inserting the rows.
+    bold_text(sheet=sheet, cell_range="A1:B1", enable_bold=False)
 
-        # Insert an empty row at the top (row 1)
-        sheet.insert_row(values=None, index=1)
-        sheet.insert_row(values=None, index=1)
+    # Also, remove the bold formatting from the 3 row
+    bold_text(sheet=sheet, cell_range="3:3", enable_bold=False)
 
-        # Update cell A1 with "Refresh" and cell B1 with the current timestamp
-        sheet.update("A1", "Refresh_at: ")
-        sheet.update("B1", current_timestamp)
+    # # Now sort the columns of Assessment_progress based on the scores in descending order
+    # if sheet_name=="Assessment - Progress":
+        # sort_data(sheet=sheet)
+
+    # Insert an empty row at the top (row 1)
+    sheet.insert_row(values=None, index=1)
+    sheet.insert_row(values=None, index=1)
+
+    # Update cell A1 with "Refresh" and cell B1 with the current timestamp
+    sheet.update("A1", "Refresh_at: ")
+    sheet.update("B1", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     # Now bold the text A1:B1 that contains Refresh_at
     bold_text(sheet=sheet, cell_range="A1:B1")
@@ -262,15 +252,38 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
 def generate_report(df, sheet_name, value_column, folder_id, file_name):
     if not df.empty:
         df.sort_values(value_column, ascending=False, inplace=True)
+
         df_drop_duplicates = df.drop_duplicates(
             subset=["participant_name", "participant_email", "project_name"],
             keep="first",
         )
+
+        # pivot the columns
         view_df = df_drop_duplicates.pivot(
             index=["participant_email", "participant_name"],
             columns="project_name",
             values=value_column,
         ).reset_index()
+
+        # In case when sheet is related to assessment, we need to fetch one more attribute
+        # that is Average    
+        if sheet_name=="Assessment - Progress":
+            # Except participant_email and participant_name, all others are the assessment, thus
+            # calculate the average for that
+
+            # Before calculating the average, iterate through each assessment and replace the null 
+            # values with 0
+            view_df.fillna(0, inplace=True)
+
+            other_columns = ['participant_email', 'participant_name']
+            assessment_columns = [col for col in view_df.columns if col not in other_columns]
+            if len(assessment_columns) > 1: 
+                # find the average
+                view_df["Average"] = view_df[assessment_columns].mean(axis=1).round()
+                view_df.sort_values("Average", ascending=False, inplace=True)
+            else:
+                view_df.sort_values(assessment_columns[0], ascending=False, inplace=True)
+
         generate_progress_report_from_view(
             view_df=view_df,
             sheet_name=sheet_name,

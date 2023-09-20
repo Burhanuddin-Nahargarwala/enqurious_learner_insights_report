@@ -7,7 +7,7 @@ from db import conn, cursor, close_cursor_and_conn
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
 from tqdm import tqdm
-
+from common import PROGRESS_REPORT_FOLDER_NAME
 
 def filter_within_proxy_period(df, months):
     df["within_proxy_period"] = df["created_at"].apply(
@@ -151,8 +151,10 @@ def generate_report_based_on_program_code(fact_df, folder_id, file_name):
 
     # assessment df
     assessment_df = fact_df[fact_df["intent"] == "Assessment"]
+
     # Drop the "progress (%)"
     assessment_df.drop("Progress (%)", axis=1, inplace=True)
+
     # Generate the Assessment - Progress sheet
     generate_report(
         df=assessment_df,
@@ -199,7 +201,7 @@ def main():
     # Fetch the folder_id of progress_report
     # This will search for folder, if folder is not there it will create the folder and return the id
     # else will directly return the id
-    progress_report_folder_id = get_folder_id("Progress Report")
+    progress_report_folder_id = get_folder_id(PROGRESS_REPORT_FOLDER_NAME)
 
     cursor.execute("SELECT * FROM clients;")
     result = cursor.fetchall()
