@@ -147,12 +147,19 @@ def filter_full_evaluated_assessments(assessment_df):
     assessment_scores_df = assessment_df.merge(
         evaluations_status_df,
         on=["order_id", "participant_email"],
-        how="inner",
+        how="left",
     )
 
+    assessment_scores_df.to_csv("assessment_scores.csv", index=False)
+
+    ## Here we have to do the changes, that although learner haven't attempted the assessment
+    ## his scores should will be visible in the progress_report.
     assessment_evaluations_status_df = (
         assessment_scores_df.groupby("order_id")
-        .agg(total_participants=("order_id", "count"))
+        # is_evaluated comes in the case of only those participants who have submitted the project,
+        # so if those particiants who haven't submitted or started the project, then he won't be counted
+        # in total_participants, but his scores will be reflected in the progress_report
+        .agg(total_participants=("is_evaluated", "count"))
         .reset_index()
         .merge(
             assessment_scores_df[assessment_scores_df["is_evaluated"] == True]
@@ -174,6 +181,12 @@ def filter_full_evaluated_assessments(assessment_df):
     assessment_scores_evaluations_status_df = assessment_evaluations_status_df.merge(
         assessment_scores_df, on="order_id", how="inner"
     )
+
+    ## The case when there are no scores for participants indicating that he haven't started the project
+    ## or he haven't submitted the project. fill the blank values of Scores(%) attibute with 0
+    assessment_scores_evaluations_status_df[
+        "Scores (%)"
+    ] = assessment_scores_evaluations_status_df["Scores (%)"].fillna(0)
 
     # Now only filter out those records where total_participants are equal to evaluated_participants
     full_evaluated_assessment = assessment_scores_evaluations_status_df[
@@ -281,9 +294,6 @@ def main():
     for client_id, client_name in map_client_id_and_name.items():
         print(client_name)
 
-        if client_name != "Tredence":
-            continue
-
         # Fetch the skills_fact calculation df
         skills_fact_calculation_df = skills_fact_calculation(
             cursor=cursor, client_id=client_id  # Tredence
@@ -346,9 +356,6 @@ def main():
         for program_code in program_codes:
             # if program code doesn't contain the digits and letters both, don't consider that program code
             if not is_program_code(program_code):
-                continue
-
-            if program_code != "TRED-DE-07092023":
                 continue
 
             # Once the client folder is created, now create the program_code folder or get id of that

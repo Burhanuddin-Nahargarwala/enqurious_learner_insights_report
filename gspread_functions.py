@@ -16,19 +16,18 @@ import pandas as pd
 # if the code is running locally then only the dotenv module will be imported
 if is_running_locally():
     from dotenv import load_dotenv, find_dotenv
+
     load_dotenv(find_dotenv())
 
-    aws_access_key = os.environ.get('aws-access-key-id')
-    aws_secret_key = os.environ.get('aws-secret-access-key')
-    region = os.environ.get('aws-region')
+    aws_access_key = os.environ.get("aws-access-key-id")
+    aws_secret_key = os.environ.get("aws-secret-access-key")
+    region = os.environ.get("aws-region")
 
     s3 = boto3.client(
-        's3',
-        aws_access_key_id=aws_access_key, 
-        aws_secret_access_key=aws_secret_key
+        "s3", aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key
     )
-else:   
-    s3=boto3.client('s3')
+else:
+    s3 = boto3.client("s3")
 
 bucket_name = "learners-progress-report-credentials"
 file_key = "google_credentials_file/generated-report-77c0d34eb762.json"
@@ -36,8 +35,8 @@ file_key = "google_credentials_file/generated-report-77c0d34eb762.json"
 # Fetch the contents of the file from S3
 try:
     response = s3.get_object(Bucket=bucket_name, Key=file_key)
-    service_account_info = json.loads(response['Body'].read().decode('utf-8'))
-    
+    service_account_info = json.loads(response["Body"].read().decode("utf-8"))
+
     # # Print or process the file content as needed
     # print(file_content.decode('utf-8'))  # Assuming it's a text file
 except Exception as e:
@@ -79,7 +78,9 @@ def search_folder(folder_name, parent_folder_id=None):
     return folders
 
 
-def create_folder(folder_name, parent_folder_id): # parent_folder_id="1AzkjLoxMHu6oA7CQHSNeNBQTUKadF3_D"):
+def create_folder(
+    folder_name, parent_folder_id
+):  # parent_folder_id="1AzkjLoxMHu6oA7CQHSNeNBQTUKadF3_D"):
     # Create the folder metadata
     folder_metadata = {
         "name": folder_name,
@@ -173,7 +174,9 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
         "https://www.googleapis.com/auth/drive",
     ]
 
-    credentials = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+    credentials = Credentials.from_service_account_info(
+        service_account_info, scopes=scopes
+    )
 
     gc = gspread.authorize(credentials)
 
@@ -199,16 +202,16 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
         # Else add the sheet and then open it
         sheet = sh.add_worksheet(
             title=sheet_name, rows=len(view_df), cols=len(view_df.columns)
-        )  
+        )
 
     set_with_dataframe(
-            worksheet=sheet,
-            dataframe=view_df,
-            include_index=False,
-            include_column_header=True,
-            resize=True,
-        )
-    
+        worksheet=sheet,
+        dataframe=view_df,
+        include_index=False,
+        include_column_header=True,
+        resize=True,
+    )
+
     # First remove the boldness from the cell range
     # will remove the bold from the cell as below logic inserts 2 cell, and thus if the bold formatting
     # is not removed then the bold formatting of A1:B1 will move to A3:B3, and like these it will shift
@@ -220,7 +223,7 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
 
     # # Now sort the columns of Assessment_progress based on the scores in descending order
     # if sheet_name=="Assessment - Progress":
-        # sort_data(sheet=sheet)
+    # sort_data(sheet=sheet)
 
     # Insert an empty row at the top (row 1)
     sheet.insert_row(values=None, index=1)
@@ -233,13 +236,20 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
     # by fetching the utc timestamp and adding 5:30 to it
     utc_date = datetime.utcnow()
     new_hour = utc_date.hour + 5
-    new_minute = utc_date.minute+30
+    new_minute = utc_date.minute + 30
     if new_minute > 59:
         new_minute = new_minute - 60
         new_hour += 1
 
     # Based on new_hour and new_minutes, find the IST approx date
-    ist_date = datetime(utc_date.year, utc_date.month, utc_date.day, new_hour, new_minute, utc_date.second)
+    ist_date = datetime(
+        utc_date.year,
+        utc_date.month,
+        utc_date.day,
+        new_hour,
+        new_minute,
+        utc_date.second,
+    )
     sheet.update("B1", ist_date.strftime("%Y-%m-%d %H:%M:%S"))
 
     # Now bold the text A1:B1 that contains Refresh_at
@@ -270,23 +280,27 @@ def generate_report(df, sheet_name, value_column, folder_id, file_name):
         ).reset_index()
 
         # In case when sheet is related to assessment, we need to fetch one more attribute
-        # that is Average    
-        if sheet_name=="Assessment - Progress":
+        # that is Average
+        if sheet_name == "Assessment - Progress":
             # Except participant_email and participant_name, all others are the assessment, thus
             # calculate the average for that
 
-            # Before calculating the average, iterate through each assessment and replace the null 
+            # Before calculating the average, iterate through each assessment and replace the null
             # values with 0
             view_df.fillna(0, inplace=True)
 
-            other_columns = ['participant_email', 'participant_name']
-            assessment_columns = [col for col in view_df.columns if col not in other_columns]
-            if len(assessment_columns) > 1: 
+            other_columns = ["participant_email", "participant_name"]
+            assessment_columns = [
+                col for col in view_df.columns if col not in other_columns
+            ]
+            if len(assessment_columns) > 1:
                 # find the average
                 view_df["Average"] = view_df[assessment_columns].mean(axis=1).round()
                 view_df.sort_values("Average", ascending=False, inplace=True)
             else:
-                view_df.sort_values(assessment_columns[0], ascending=False, inplace=True)
+                view_df.sort_values(
+                    assessment_columns[0], ascending=False, inplace=True
+                )
 
         generate_progress_report_from_view(
             view_df=view_df,
