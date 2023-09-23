@@ -8,6 +8,7 @@ from dateutil.relativedelta import relativedelta
 from datetime import datetime
 from common import PROGRESS_REPORT_FOLDER_NAME
 
+
 def filter_within_proxy_period(df, months):
     df["within_proxy_period"] = df["created_at"].apply(
         lambda date_str: date_str.date()
@@ -131,6 +132,58 @@ def get_folder_id(folder_name, parent_id=None):
     return folder_id
 
 
+def filter_full_evaluated_assessments(assessment_df):
+    cursor.execute("SELECT * FROM evaluations_status;")
+    result = cursor.fetchall()
+    column_names = [desc[0] for desc in cursor.description]
+
+    evaluations_status_df = pd.DataFrame(result, columns=column_names)
+
+    evaluations_status_df = evaluations_status_df[
+        ["order_id", "participant_email", "is_evaluated"]
+    ]
+
+    # Now merge the given skills_fact df with the evaluations_df
+    assessment_scores_df = assessment_df.merge(
+        evaluations_status_df,
+        on=["order_id", "participant_email"],
+        how="inner",
+    )
+
+    assessment_evaluations_status_df = (
+        assessment_scores_df.groupby("order_id")
+        .agg(total_participants=("order_id", "count"))
+        .reset_index()
+        .merge(
+            assessment_scores_df[assessment_scores_df["is_evaluated"] == True]
+            .groupby("order_id")
+            .agg(evaluated_participants=("order_id", "count"))
+            .reset_index(),
+            on="order_id",
+            how="left",
+        )
+    )
+
+    # There can be some assessment where there is no evaluation, in that case there will be blank value
+    # so fill that with 0
+    assessment_evaluations_status_df[
+        "evaluated_participants"
+    ] = assessment_evaluations_status_df["evaluated_participants"].fillna(0)
+
+    # Now merge the assessment_scores_df, with project_evaluations_status_df
+    assessment_scores_evaluations_status_df = assessment_evaluations_status_df.merge(
+        assessment_scores_df, on="order_id", how="inner"
+    )
+
+    # Now only filter out those records where total_participants are equal to evaluated_participants
+    full_evaluated_assessment = assessment_scores_evaluations_status_df[
+        assessment_scores_evaluations_status_df["total_participants"]
+        == assessment_scores_evaluations_status_df["evaluated_participants"]
+    ].reset_index(drop=True)
+
+    return full_evaluated_assessment
+
+
 def generate_report_based_on_program_code(fact_df, folder_id, file_name):
     # learning df
     learning_df = fact_df[
@@ -154,13 +207,16 @@ def generate_report_based_on_program_code(fact_df, folder_id, file_name):
     # Drop the "progress (%)"
     assessment_df.drop("Progress (%)", axis=1, inplace=True)
 
+    # Filter only full evaluated assessment
+    full_evaluated_assessment_df = filter_full_evaluated_assessments(assessment_df)
+
     # Generate the Assessment - Progress sheet
     generate_report(
-        df=assessment_df,
+        df=full_evaluated_assessment_df,
         sheet_name="Assessment - Progress",
         value_column="Scores (%)",
         folder_id=folder_id,
-        file_name=file_name
+        file_name=file_name,
     )
 
 
@@ -225,6 +281,9 @@ def main():
     for client_id, client_name in map_client_id_and_name.items():
         print(client_name)
 
+        if client_name != "Tredence":
+            continue
+
         # Fetch the skills_fact calculation df
         skills_fact_calculation_df = skills_fact_calculation(
             cursor=cursor, client_id=client_id  # Tredence
@@ -249,10 +308,13 @@ def main():
             how="right",
         )
 
+        # fetch only those records that are active, this will exclude the cancelled orders
+        active_orders = orders_df[orders_df["is_active"] == True]
+
         # merge the calculation of skills and progress fact with orders_dimension
         skills_fact_and_progress_fact_orders = pd.merge(
             skills_fact_and_progress_fact,
-            orders_df.rename({"id": "order_id"}, axis=1),
+            active_orders.rename({"id": "order_id"}, axis=1),
             on="order_id",
             how="inner",
         )
@@ -285,7 +347,10 @@ def main():
             # if program code doesn't contain the digits and letters both, don't consider that program code
             if not is_program_code(program_code):
                 continue
-            
+
+            if program_code != "TRED-DE-07092023":
+                continue
+
             # Once the client folder is created, now create the program_code folder or get id of that
             program_code_folder_id = get_folder_id(
                 folder_name=program_code, parent_id=client_folder_id
@@ -297,8 +362,6 @@ def main():
                     program_code
                 )
             ].reset_index(drop=True)
-
-            print(view_df)
 
             view_df = view_df[
                 [
@@ -314,13 +377,13 @@ def main():
             ]
 
             # The file_name should be pogram_code+"_"+report ex. GLOB-0567_report
-            file_name=f"{program_code}_report"
+            file_name = f"{program_code}_report"
 
             # it will take program code and based on that, it will filter the
             generate_report_based_on_program_code(
                 fact_df=view_df,
                 folder_id=program_code_folder_id,  # the folder where the reports sheet will be created that is Program code folder
-                file_name=file_name
+                file_name=file_name,
             )
 
     # At the end close the cursor and conn
@@ -331,6 +394,7 @@ def lambda_handler(event, context):
     # Run the main function
     main()
     return {"message": "Report successfully generated"}
+
 
 if __name__ == "__main__":
     main()

@@ -13,7 +13,6 @@ from common import is_running_locally
 import json
 import pandas as pd
 
-
 # if the code is running locally then only the dotenv module will be imported
 if is_running_locally():
     from dotenv import load_dotenv, find_dotenv
@@ -154,13 +153,6 @@ def bold_text(sheet, cell_range, enable_bold: bool = True):
     sheet.format(cell_range, format)
 
 
-# def sort_data(sheet):
-#     total_cols = sheet.col_count
-    
-#     for col in range(3, total_cols+1):
-#         sheet.sort((col, 'des'))
-
-
 def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name):
     """
     prerequisites: If the function doesn't store the given df into the Google sheet then check that you
@@ -236,7 +228,19 @@ def generate_progress_report_from_view(view_df, sheet_name, folder_id, file_name
 
     # Update cell A1 with "Refresh" and cell B1 with the current timestamp
     sheet.update("A1", "Refresh_at: ")
-    sheet.update("B1", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    # datetime.now() is giving different times on local and on lambda function, so manually calculate IST
+    # by fetching the utc timestamp and adding 5:30 to it
+    utc_date = datetime.utcnow()
+    new_hour = utc_date.hour + 5
+    new_minute = utc_date.minute+30
+    if new_minute > 59:
+        new_minute = new_minute - 60
+        new_hour += 1
+
+    # Based on new_hour and new_minutes, find the IST approx date
+    ist_date = datetime(utc_date.year, utc_date.month, utc_date.day, new_hour, new_minute, utc_date.second)
+    sheet.update("B1", ist_date.strftime("%Y-%m-%d %H:%M:%S"))
 
     # Now bold the text A1:B1 that contains Refresh_at
     bold_text(sheet=sheet, cell_range="A1:B1")
