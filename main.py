@@ -2,27 +2,22 @@
 import json
 import pandas as pd
 
-from gspread_functions import search_folder, create_folder, generate_report
+from gspread_functions import (
+    search_folder,
+    create_folder,
+    generate_report,
+    fetch_data_from_google_sheet,
+)
 from db import conn, cursor, close_cursor_and_conn
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
 from common import PROGRESS_REPORT_FOLDER_NAME
 
 
-def filter_within_proxy_period(df, months_to_keep):
-    """Filters records in the dataframe to retain only those within the specified proxy period.
-
-    Args:
-        dataframe (DataFrame): The input DataFrame containing records to filter.
-        months_to_keep (int): The number of months that defines the proxy period.
-
-    Returns:
-        DataFrame: A new DataFrame containing only records within the proxy period.
-    """
-
+def filter_within_proxy_period(df, months):
     df["within_proxy_period"] = df["created_at"].apply(
         lambda date_str: date_str.date()
-        > (datetime.now().date() - relativedelta(months=months_to_keep))
+        > (datetime.now().date() - relativedelta(months=months))
     )
 
     df = df[df["within_proxy_period"] == True].reset_index(drop=True)
@@ -34,16 +29,6 @@ def filter_within_proxy_period(df, months_to_keep):
 
 
 def skills_fact_calculation(cursor, client_id):
-    """Calculates the total scores of a specific project and the individual scores of participants in that project.
-
-    Args:
-        cursor (psycopg2.extensions.cursor): The psycopg2 database cursor for executing SQL queries.
-        client_id (str): The client ID used to filter records related to a specific client and perform calculations.
-
-    Returns:
-        DataFrame: A new DataFrame containing individual learner scores and the total project score, presented as percentages.
-    """
-
     # now fetch the skills_fact table
     cursor.execute(
         f"SELECT * FROM skills_fact WHERE client_id='{client_id}' AND is_current=True;"
@@ -56,7 +41,7 @@ def skills_fact_calculation(cursor, client_id):
     skills_fact_df = pd.DataFrame(skills_fact_result, columns=skills_fact_columns)
 
     # Filter the table based on proxy period
-    skills_fact_df = filter_within_proxy_period(skills_fact_df, months_to_keep=3)
+    skills_fact_df = filter_within_proxy_period(skills_fact_df, months=3)
     # print("Skills fact created_at: ", skills_fact_df["created_at"].unique())
 
     # Take the skills_fact at the order level granularity
@@ -88,17 +73,6 @@ def skills_fact_calculation(cursor, client_id):
 
 
 def progress_fact_calculation(cursor, client_id):
-    """Calculates the progress percentage of participants in their projects. Progress is based on the number of
-    project inputs attempted compared to the total number of inputs.
-
-    Args:
-        cursor (psycopg2.extensions.cursor): The psycopg2 database cursor for executing SQL queries.
-        client_id (str): The client ID used to filter records related to a specific client and perform calculations.
-
-    Returns:
-        DataFrame: A new DataFrame containing the progress percentages of individual learners for their respective projects.
-    """
-
     # now fetch the progress fact table
     cursor.execute(
         f"SELECT * FROM progress_fact WHERE client_id='{client_id}' AND is_current=True;"
@@ -111,7 +85,7 @@ def progress_fact_calculation(cursor, client_id):
     progress_fact_df = pd.DataFrame(progress_fact_result, columns=progress_fact_columns)
 
     # Filter the table based on proxy period
-    progress_fact_df = filter_within_proxy_period(progress_fact_df, months_to_keep=3)
+    progress_fact_df = filter_within_proxy_period(progress_fact_df, months=3)
     # print("Progress fact created_at: ", progress_fact_df["created_at"].unique())
 
     # Now fetch the percentage of progress
@@ -156,18 +130,6 @@ def progress_fact_calculation(cursor, client_id):
 
 
 def get_folder_id(folder_name, parent_id=None):
-    """Fetches the folder ID of a specified folder in Google Drive. If the folder doesn't exist,
-    it creates the folder and returns its ID.
-
-    Args:
-        folder_name (str): The name of the folder to search for on Google Drive.
-        parent_id (str|None, optional): The ID of the parent folder to search within. If None,
-            the search will be performed in the root directory. Defaults to None.
-
-    Returns:
-        folder_id (str): The folder ID of the specified folder.
-    """
-
     # 1. Check whether Progress Report folder exists or not
     folders = search_folder(folder_name, parent_id)
 
@@ -182,25 +144,6 @@ def get_folder_id(folder_name, parent_id=None):
 
 
 def filter_full_evaluated_assessments(assessment_df):
-    """Filters and fetches assessment data from the 'evaluations_status' table to determine the number of learners
-    who participated in an assessment, how many submitted their projects, and how many were evaluated.
-    The 'is_evaluated' attribute in the evaluation status indicates whether a participant is evaluated or not.
-    Total submitted participants and total evaluated participants are calculated.
-    If the total submitted participants equal the total evaluated participants, their scores are reflected in
-    the Google Sheet. This includes learners who may not have started or submitted their projects but are not counted
-    under total participants.
-
-    Only assessments where the total participants match the evaluated participants are considered in the output.
-    Assessments where these counts differ are excluded.
-
-    Args:
-        assessment_df (DataFrame): The DataFrame containing project-wise scores of participants for processing.
-
-    Returns:
-        fully_evaluated_assessment (DataFrame): The DataFrame containing assessments where the total number of
-        participants matches the number of participants evaluated.
-    """
-
     ## Here we have to do the changes, that although learner haven't attempted the assessment
     ## his scores will be visible in the progress_report.
     ## In total_participants only those participants are considered who have submitted the project,
@@ -210,14 +153,13 @@ def filter_full_evaluated_assessments(assessment_df):
     assessment_evaluations_status_df = (
         assessment_df[assessment_df["learner_status_by_order"] == "Submitted"]
         .groupby(
-            "project_name"
+            ["description", "project_name"]
         )  # project_name is used insted of order_id, as many times it happend that
         # same project is deployed separately for some learners due to some issues, but the name of the project
         # will be the same.
-        # Scores (%) will contain null values in the case when participants haven't evaluated for the project,
-        # thus in total_participants all the participants will count who have submitted the project by counting the
-        # participant_email, while in evaluated particiants only those participants will be consider
-        # who has evaluated the project, the participants who haven't started won't be counted
+        # Scores (%) will contain null values in the case when participants haven't submitted the project,
+        # thus only those participants who have submitted the project,
+        # so if those particiants who haven't submitted or started the project, then he won't be counted
         # in total_participants, but his scores will be reflected in the progress_report
         .agg(
             total_participants=("participant_email", "count"),
@@ -234,7 +176,7 @@ def filter_full_evaluated_assessments(assessment_df):
 
     # Now merge the assessment_scores_df, with project_evaluations_status_df
     assessment_scores_evaluations_status_df = assessment_evaluations_status_df.merge(
-        assessment_df, on="project_name", how="inner"
+        assessment_df, on="description", how="inner"
     )
 
     ## The case when there are no scores for participants indicating that he haven't started the project
@@ -249,20 +191,15 @@ def filter_full_evaluated_assessments(assessment_df):
         == assessment_scores_evaluations_status_df["evaluated_participants"]
     ].reset_index(drop=True)
 
+    # Change the project_name_x to project_name and delete the project_name_y
+    full_evaluated_assessment = full_evaluated_assessment.drop(
+        "project_name_y", axis=1
+    ).rename({"project_name_x": "project_name"}, axis=1)
+
     return full_evaluated_assessment
 
 
-def separate_and_generate_progress_reports(fact_df, folder_id, file_name):
-    """Separates Masterclass - Progress and Assessment - Progress records based on their intent.
-    Then, it calls the 'generate_report' function from the 'gspread_functions.py' module to generate
-    progress reports for both Masterclass - Progress and Assessment - Progress.
-
-    Args:
-        fact_df (DataFrame): The DataFrame containing both Masterclass and assessment records.
-        folder_id (str): The ID of the folder where the progress report should be located.
-        file_name (str): The name of the file where the progress and assessment reports should be reflected.
-    """
-
+def generate_report_based_on_program_code(fact_df, folder_id, file_name):
     # learning df
     learning_df = fact_df[
         (fact_df["intent"] == "Learning") | (fact_df["intent"] == "Training")
@@ -312,7 +249,7 @@ def is_program_code(program_code):
     5. If we complete the loop without finding both letters and digits, we return False.
 
     Args:
-        program_code (str):
+        program_code (_type_): _description_
     """
     has_letters = False
     has_digits = False
@@ -331,18 +268,6 @@ def is_program_code(program_code):
 
 
 def main():
-    """The main function where containing the main logic where the clients records, orders_dimensions
-    records are calculated and then get_folder_id function is called to fetch the folder id if exists
-    or create if not exists
-
-    The client_id and client_name are mapped and then one by one all the scores of the programs will be
-    filtered out based on the client_id that are currently running.
-
-    The description of the projects are fetched from the 'orders_dimension' table, using the description
-    program codes are fetched and check whether the program code is appropriate or not if yes then it
-    continues and filter all the records based on that program_code.
-    """
-
     # Fetch the folder_id of progress_report
     # This will search for folder, if folder is not there it will create the folder and return the id
     # else will directly return the id
@@ -456,6 +381,7 @@ def main():
                     "Scores (%)",
                     "Progress (%)",
                     "project_name",
+                    "description",
                     "intent",
                     "learner_status_by_order",
                 ]
@@ -465,7 +391,7 @@ def main():
             file_name = f"{program_code}_report"
 
             # it will take program code and based on that, it will filter the
-            separate_and_generate_progress_reports(
+            generate_report_based_on_program_code(
                 fact_df=view_df,
                 folder_id=program_code_folder_id,  # the folder where the reports sheet will be created that is Program code folder
                 file_name=file_name,

@@ -334,6 +334,9 @@ def update_assessment_data_with_google_sheet_data(new_assessment_data_df, file_n
         sheet_name=sheet_name,
     )
 
+    if not sheet_data_df:
+        return new_assessment_data_df
+
     # Remove the column "Average"
     if "Average" in sheet_data_df.columns:
         sheet_data_df = sheet_data_df.drop(columns=["Average"])
@@ -355,7 +358,7 @@ def update_assessment_data_with_google_sheet_data(new_assessment_data_df, file_n
     #for col in missing_columns:
     # print(f"{col} column is not present in new assessment sheet, but is there in the google sheet.")
 
-    # Now append participant_email with mssing columns for merge purpose
+    # Now append participant_email with missing columns for merge purpose
     missing_columns.append("participant_email")
 
     new_assessment_data_df = new_assessment_data_df.merge(
@@ -387,14 +390,14 @@ def generate_report(df, sheet_name, value_column, folder_id, file_name):
         df.sort_values(value_column, ascending=False, inplace=True)
 
         df_drop_duplicates = df.drop_duplicates(
-            subset=["participant_name", "participant_email", "project_name"],
+            subset=["participant_name", "participant_email", "description"],
             keep="first",
         )
 
         # pivot the columns
         view_df = df_drop_duplicates.pivot(
             index=["participant_email", "participant_name"],
-            columns="project_name",
+            columns="description",
             values=value_column,
         ).reset_index()
 
@@ -471,14 +474,21 @@ def fetch_data_from_google_sheet(file_name, sheet_name, folder_id):
         spreadsheet = gc.open(title=file_name, folder_id=folder_id)
     except Exception as error:
         print(error)
+        return None
 
     # Select a specific worksheet (e.g., the first sheet)
-    worksheet = spreadsheet.worksheet(sheet_name)
+    try:
+        worksheet = spreadsheet.worksheet(sheet_name)
+    except Exception as error:
+        print(error)
+        return None
 
     # Get all values from the worksheet
     data = worksheet.get_all_values()
 
-    # Convert the data into a DataFrame (assuming the first row contains column headers)
-    df = pd.DataFrame(data[3:], columns=data[2])
+    if data:
+        # Convert the data into a DataFrame (assuming the first row contains column headers)
+        df = pd.DataFrame(data[3:], columns=data[2])
+        return df
 
-    return df
+    return None
